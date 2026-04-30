@@ -24,7 +24,7 @@ class MediaAsset(models.Model):
     # always display my objects in the order of creation 
     class Meta:
         ordering = ['-created_at']   
-    # editing rights 
+    # check if the user has editing rights 
     def can_edit(self,user):
         '''check if user can update this asset'''
         return user == self.uploaded_by or user.is_teacher() or user.is_superuser

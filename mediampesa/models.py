@@ -5,6 +5,7 @@ class Transactions(models.Model):
     # transaction id : mpesa's valid transaction id for successfull payments 
     transaction_id = models.CharField(max_length=100, blank=True, null=True)
     phone_number = models.CharField(max_length=15)
+    # phone number of the payer
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     # mpesa receipt number 
     mpesa_receipt_number = models.CharField(max_length=100, blank=True, null=True)
