@@ -27,14 +27,15 @@ DEBUG = True
 
 # domains allowed to share mediaHub resources / processes :: CORS 
 ALLOWED_HOSTS = [
-    "localhost",
-    "127.0.0.1",
-    "9875a57c7fd5.ngrok-free.app", 
+    'vacant-retry-unjustly.ngrok-free.dev',
+    '127.0.0.1',
+    'localhost',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://*.ngrok-free.app",
-]
+    'https://*.ngrok-free.app',
+    'https://vacant-retry-unjustly.ngrok-free.dev',
+    ]
 
 # Application definition
 

@@ -22,3 +22,8 @@ where master is referencing the default branch where work will be saved
 - git add .
 - git comit -m "commit msg"
 -git push -u origin master/main
+
+### to remove items already pushed before .gitignore
+- git rm --cached .env
+- git commit -m "add relevant message"
+- git push origin master/main

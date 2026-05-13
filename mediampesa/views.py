@@ -1,17 +1,17 @@
-from os import times
+from os import times #date time processes/ math functionality
 import requests # we use this lib. in python to interact with API's 
 from django.shortcuts import render, redirect
-from django.db.models.expressions import result
-from django.views.decorators.csrf import csrf_exempt
+from django.db.models.expressions import result # capture db results / queries
+from django.views.decorators.csrf import csrf_exempt #post encryption security for external processes : stk push / callback
 from django.http import JsonResponse # json format for our results as well queries 
 from .models import Transactions
-import base64 # encryption at a script one 
+import base64 # encryption at a script one / passcodes
 from datetime import datetime
-import json
-from django.core.mail import send_mail
+import json # to handle json data from daraja api on callback and also to send json data to daraja api for stk push
+from django.core.mail import send_mail # to send email notifications to users on payment success / failure / cancellation
 from django.core.paginator import Paginator
-import os
-from dotenv import load_dotenv
+import os #loading environment variables from .env file for security of our credentials and also to make our code more flexible across different environments : development / production
+from dotenv import load_dotenv # load our environment credentials
 
 load_dotenv() # making our settings config available to our view files 
 
@@ -24,15 +24,17 @@ SHORTCODE = os.getenv('SHORTCODE')
 PASSKEY = os.getenv('PASSKEY')
 BASE_URL = os.getenv('BASE_URL')
 CONSUMER_KEY = os.getenv('CONSUMER_KEY')
-CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
-NGROK_URL = os.getenv('NGROK_URL')
-CALLBACK_URL = os.getenv('CALLBACK_URL')
+CONSUMER_SECRET = os.getenv('CONSUMER_SECRET') 
+# developmental urls for testing with ngrok : to capture daraja api callbacks on local server
+NGROK_URL = os.getenv('NGROK_URL') #dummy testing
+CALLBACK_URL = os.getenv('CALLBACK_URL') #mpesa sends the result of a transaction to this url : success / failure / cancellation
 
-class MpesaPassword:
+class MpesaPassword: # generate the password for the stk push process : this is a combination of my shortcode + passkey + timestamp all encoded in base64
     @staticmethod  # DECLARING THIS METHOD DOES NOT BELONG TO ANY OBJECT / OR CLASS 
     def generate_security_credential():
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         data_to_encode = SHORTCODE + PASSKEY + timestamp
+        # encrypting the data to base64 format for security purposes : this is the password that will be used in the stk push process to authorize the transaction request
         online_password = base64.b64encode(data_to_encode.encode()).decode()
 
         return online_password
@@ -40,19 +42,22 @@ class MpesaPassword:
 # get the access token from mpesa 
 # MPESA API - AUTHORIZATION TO GET AN ACCESS TOKEN 
 def generate_access_token():
+    # password will be time and date  + shortcode + passkey
     auth_url = f'{BASE_URL}/oauth/v1/generate?grant_type=client_credentials' # endpoint 
+    print(auth_url)
     response = requests.get(auth_url, auth=(CONSUMER_KEY, CONSUMER_SECRET))
     return response.json().get('access_token')  # my access token from mpesa api 
 
 # index page for transactions  # this gives back the checkout page 
 def index(request):
-    return render(request, 'mediampesa/index.html')
+    return render(request, 'mediampesa/index.html') # transaction form page : where users input their phone number , amount to pay , name and email for payment receipt notifications
 
 # this will execute an stk push on request 
 # we exempt a csrf security check for external processes stk push / callback 
 '''
 1. Accept post data (phone , amount , name and email )
-2. Create a pending transaction database 
+2. Create a pending transaction database / idempotent transaction record in our db to capture the transaction details and also to update the transaction status once we receive the result from mpesa on the callback url
+creates transaction_id that uniquely identifies the transaction record in our db and also serves as a reference for the transaction on mpesa's end : this is what we will use to match the transaction result from mpesa to the transaction record in our db and then update the transaction status accordingly
 3. Generate the access token 
 4. generate of passwords + timestamp 
 5. Sends the stk push request to safaricom via a daraja api endppoint 
@@ -68,6 +73,7 @@ def stk_push(request):
         name = request.POST.get('name')
         email = request.POST.get('email')
         # we then create our intial transaction record in our db : SQL insert : ORM : objects.create 
+        # idempotency step : we create a transaction record with pending status before we even send the request to mpesa : this is because we want to capture the transaction details and also have a reference for the transaction on our db to update once we receive the result from mpesa on our callback url
         transaction = Transactions.objects.create(
             phone_number=phone,
             amount=amount,
@@ -79,7 +85,8 @@ def stk_push(request):
         # generate the access token for our user 
         access_token = generate_access_token()
         print("access token " , access_token)
-        
+
+        #communicate to daraja api for stk push process : this is where we send the request to mpesa to trigger the stk push on the users phone : daraja api endpoint for stk push process
         stk_url = f'{BASE_URL}/mpesa/stkpush/v1/processrequest'  # endpoint to initiate an stk push 
         # authorization headers to communicate to the endpoint 
         headers = {
@@ -92,6 +99,7 @@ def stk_push(request):
         print(password)
         print(timestamp)
 
+        # send all info to mpesa servers for proccessing : this is the payload that we send to mpesa to trigger the stk push on the users phone : this includes all the transaction details as well as the callback url where mpesa will send the result of the transaction once the user has completed or failed the payment attempt on their phone
         payload = {
             "BusinessShortCode": SHORTCODE,
             "Password": password,
@@ -123,6 +131,7 @@ def stk_push(request):
     return JsonResponse({'error': "invalid request"}, status=400)
 
 # waiting page 
+# when user waits for transaction status result after the stk push has been launched : this page will keep polling the transaction status until we get a success / failure / cancellation result from mpesa and then we will redirect users to the appropriate page based on the transaction result
 def waiting_page(request, transaction_id):
     transaction = Transactions.objects.get(id=transaction_id)
     return render(request, 'mediampesa/waiting.html',{'transaction_id': transaction_id}) # sharing the current executed transaction to my waiting page 
@@ -189,7 +198,8 @@ def callback(request):
                                 f"<p>Your MPESA confirmation receipt is {transaction.mpesa_receipt_number}</p>"
                                 f"<p>Best Regards, STK Push</p>"
                             )
-                            send_mail(subject,message,'josephbill00@gmail.com',[transaction.email]
+                            # this sends the mail to our terminal email for testing purposes : in production this should be the users email that they used to make the payment
+                            send_mail(subject,message,'nyagajamesm01@gmail.com',[transaction.email]
                                       ,fail_silently=False,html_message=html_message,)
                             print("Payment receipt email sent successfully")
 
@@ -213,7 +223,7 @@ def callback(request):
     return JsonResponse({"error" : "Invalid request method"}, status=400)
 
 
-
+# this method is utilised by waiting.html to keep polling the transaction status until we get a success / failure / cancellation result from mpesa and then we will redirect users to the appropriate page based on the transaction result
 def check_status(request, transaction_id):
     # get the transaction needed for the process
     transaction = Transactions.objects.filter(id=transaction_id).first()
@@ -234,9 +244,11 @@ def check_status(request, transaction_id):
     elif transaction.status == "Cancelled":
         return JsonResponse({"status": "Cancelled", "message": "Transaction was Cancelled"}, status=200)
     else:
-        return JsonResponse({"status": "Pending", "message": "Transaction still being processed."}, status=400)
+        return JsonResponse({"status": "Pending", "message": "Transaction still being processed."}, status=200)
 
-
+'''
+The below views are for rendering the appropriate pages based on the transaction result after polling the transaction status from the waiting page 
+'''
 def payment_success(request):
     return render(request,"mediampesa/payment_success.html")
 
